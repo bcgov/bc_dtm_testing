@@ -17,28 +17,82 @@ library(bcdata)
 library(bcmaps)
 library(dplyr)
 library(rvest)
+library(ggplot2)
 
 
 ## Load in eDTM layer (from sync location)
 
-data.dir <- "D:/Hengle_BCDEM30/Output"
+data.dir <- "D:/Hengle_BCDEM30/"
+sync.dir <- "C:/Sync/BC_DEM"
+
 
 data.files <- list.files(data.dir)
+edtm <- raster(file.path(data.dir, "BC30m","dtm_elev.lowestmode_gedi.eml_m_30m_0..0cm_2000..2018_bc.epsg3005_v0.1.tif"))
+trim <- raster(file.path(data.dir, "trim", "TRIM","bc_elevation_25m_bcalb.tif"))
 
-edtm <- raster(file.path(data.dir, data.files[1])) %>%
+# Geodetic survey points
+# note data is unable to be directly directly downloaded - copy on sync drive
+# https://catalogue.data.gov.bc.ca/dataset/mascot-geodetic-control-monuments-high-precision
+
+geopt <- st_read(file.path(sync.dir, 'Point_sources', "geodetic_control", "Mascot_GeoDetic_Ctrl.shp"))
+
+#head(geopt)
+
+geopt <- geopt %>%
+  select(GEODETIC_C, LATITUDE, LONGITUDE, MUNICIPALI, QUALITY_CL, 
+         LAST_UPDAT, ELEVATION,VERTICAL_D, VERTICAL_S,
+         GEOID_UNDU) %>%
+  mutate(edtm = raster::extract(edtm, geopt)) %>%
+  mutate(trim = raster::extract(trim, geopt))
+  
+geodf <- geopt %>%
+  mutate(dedtm = round(ELEVATION,0) - edtm,
+         dtrim = round(ELEVATION,0) - trim) %>%
+  filter(!is.na(dedtm))
+  
+# check spread over data quality 
+delta <- ggplot(geodf, aes(dedtm))+ 
+  geom_histogram(binwidth = 10) +
+  facet_wrap(~QUALITY_CL, scales = "free_x")
+  #xlim(-70, 70 )
+delta
+
+
+delta_pt <- ggplot(geodf, aes(x = dedtm, y = dtrim))+ 
+  geom_point()
+
+
+
+# note: some odd one out? 
+
+# check spread over municipality 
+delta <- ggplot(geodf, aes(delta))+ 
+  geom_histogram(binwidth = 10) +
+  facet_wrap(~QUALITY_CL, scales = "free_x")
+#xlim(-70, 70 )
+delta
+
+sort(unique(geodf$delta))
+
+# compare elevation with points (differernce)
+
+geodf %>%
+filter(is.na(delta))
+
+ggplot()
+
+
+# compared with quality class, and quality of point data
+
+
+
+
+
+  filter(QUALITY_CL %in% c(A, B, ))
 
   
-  
-
-# download point data from geodetics survey
-  geopt <- 
-  "https://catalogue.data.gov.bc.ca/dataset/2edb1fd0-0767-44ac-be1d-57085c722922
-    
-  
-  
-  
-  
-  
+  table(geopt$QUALITY_CL
+        )
   
   
   

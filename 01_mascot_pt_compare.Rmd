@@ -1,0 +1,209 @@
+---
+title: "Geodetic_pt_compare"
+author: "G. Perkins"
+date: "18/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = FALSE,
+                      message = FALSE)
+
+```
+
+# Point comparison with geodetic mascot points
+
+Compare the bc Data catalogue historic high precision [point data](https://catalogue.data.gov.bc.ca/dataset/mascot-geodetic-control-monuments-high-precision) with ensemble DTM, TRIM and LiDAR where possible to assess variability. 
+
+Note a copy of the data was obtained from the bc catalogue and saved on the sync drive
+
+```{r load data, echo = FALSE }
+
+# Read in geometic data set (independent of data assembly process) and compare to 
+# ensemble dtm, lidar, trim. 
+
+library(raster)
+library(sf)
+library(bcdata)
+library(bcmaps)
+library(dplyr)
+library(rvest)
+library(ggplot2)
+library(tidyr)
+
+
+## Load in eDTM layer and trim (from sync location)
+
+data.dir <- "D:/Hengle_BCDEM30"
+sync.dir <- "C:/Sync/BC_DEM"
+temp.dir <- file.path(data.dir,"temp")
+
+geopt <- st_read(file.path(sync.dir, 'Point_sources', "geodetic_control", "Mascot_GeoDetic_Ctrl.shp"), quiet = TRUE)
+
+
+if(file.exists(file.path(temp.dir, "mascot_dem_pts.rds"))){
+  
+  #print("loading file")
+  geodf <- readRDS(file.path(temp.dir, "mascot_dem_pts.rds"))
+
+} else {
+
+  #print("generating file, be patient")
+  
+edtm <- raster(file.path(data.dir, "BC30m","dtm_elev.lowestmode_gedi.eml_m_30m_0..0cm_2000..2018_bc.epsg3005_v0.1.tif"))
+trim <- raster(file.path(data.dir, "trim", "TRIM","bc_elevation_25m_bcalb.tif"))
+
+geopt <- geopt %>%
+  select(GEODETIC_C, LATITUDE, LONGITUDE, MUNICIPALI, QUALITY_CL, 
+         LAST_UPDAT, ELEVATION,VERTICAL_D, VERTICAL_S,
+         GEOID_UNDU) %>%
+  mutate(edtm = raster::extract(edtm, geopt)) %>%
+  mutate(trim = raster::extract(trim, geopt))
+
+# create delta 
+geodf <- geopt %>%
+  mutate(dedtm = round(ELEVATION,0) - edtm,
+         dtrim = round(ELEVATION,0) - trim) %>%
+  filter(!is.na(dedtm))
+  
+saveRDS(geodf, file = file.path(temp.dir, "mascot_dem_pts.rds"))
+
+st_write(geodf, file.path(temp.dir, "mascot_pt_att.gpkg"))
+
+} 
+
+
+```
+
+The delta was calculated for each data type by subtracting from the elevaltion of the geodetic points. ie elevation - trim. Positive values indicate the dtm is lower than geo points, while negative points indicate the dtm is higher than the geopts. 
+
+
+## Compare geopts to ensemble DTM
+
+As point quality data is included in the mascot dataset I checked quality of points for trends in difference 
+
+```{r clean data, echo = FALSE}
+# clean and extract dataset
+
+delta_pts <- ggplot(geodf, aes(dedtm))+ 
+  geom_histogram(binwidth = 10) 
+
+delta_pts
+
+```
+
+* most points centred around zero or positive side or zero
+* Range in values of `r range(geodf$dedtm)`
+
+
+As the data quality of points documented, I also compared delta by quality type; A - high precision, B; good, C: Poor, E; unknown quality (could be A-E).
+
+```{r}
+delta_quality <- ggplot(geodf, aes(dedtm))+ 
+  geom_histogram(binwidth = 10) +
+  facet_wrap(~QUALITY_CL, scales = "free_x")
+
+delta_quality
+
+
+edtm_elev <- ggplot(geodf, aes(dedtm, ELEVATION))+ 
+  geom_point()+ 
+  geom_vline(xintercept = 0, colour = "red")
+
+edtm_elev
+
+```
+
+Also check the variability across municipalities. 
+
+```{r}
+delta_quality1 <- ggplot(geodf, aes(dedtm, MUNICIPALI))+ 
+  geom_point() + 
+  geom_vline(xintercept = 0, colour = "red")
+delta_quality1
+```
+
+* Spread largly even across municipalitied, 
+* Highly variable across rural municipalities 
+* exceptions such as Prince George, 
+
+
+## Compare the geopts with TRIM 
+
+The range in difference between the mascot geodetic pts and TRIM was `r range(geodf$dtrim, na.rm= T)`.
+
+```{r}
+trim_quality <- ggplot(geodf, aes(dtrim))+ 
+  geom_histogram(binwidth = 10) +
+  facet_wrap(~QUALITY_CL, scales = "free_x")
+
+trim_quality
+
+
+trim_elev <- ggplot(geodf, aes(dtrim, ELEVATION))+ 
+  geom_point()+ 
+  geom_vline(xintercept = 0, colour = "red")
+
+trim_elev
+
+trim_munic <- ggplot(geodf, aes(dtrim, MUNICIPALI))+ 
+  geom_point()+ 
+  geom_vline(xintercept = 0, colour = "red")
+
+trim_munic 
+```
+* higher uncertainty around areas with lower elevation in general 
+
+
+# Delta Ensemble DTM vs Delta TRIM
+```{r}
+
+geo_long <- geodf %>%
+  pivot_longer(cols = c(dedtm, dtrim), names_to = "dem_type", values_to = "value") %>%
+  dplyr::select(ELEVATION, dem_type, value, geometry) 
+
+geo_mean <-  geo_long %>%
+  group_by(dem_type) %>%
+  summarise(mean = mean(value, na.rm = TRUE), 
+            sd = sd(value, na.rm = TRUE))
+
+geo_mean 
+
+
+delta_pt <- ggplot(geodf, aes(x = dedtm, y = dtrim))+ 
+  geom_point()
+
+delta_pt
+
+```
+
+
+# spatial comparion with uncertainty
+
+
+```{r}
+
+geo_long <- geo_long %>%
+  mutate(
+    group = case_when(
+      value < -100 ~ "extremely higher (-100)", 
+      value >-100 & value < -10 ~ "moderately higher (-100 to -10)", 
+      value >=-10 & value < 10 ~ "correct within 10m",
+    value >=10 & value <25 ~ "slight lower (10 to 25)",
+    value >=25 & value <50 ~ "moderate lower (25 to 50)",
+    value >=50 & value <100 ~ "large lower (50 to 100)",
+    value >=100 & value <800 ~ "extreme lower (100 to 800")) %>%
+  filter(!is.na(value))
+    
+table(geo_long$group)
+
+geo_plot <- ggplot(geo_long, aes(group)) + 
+  geom_bar()+ 
+  facet_wrap(~ dem_type) + 
+  coord_flip()
+
+geo_plot 
+
+```
+
