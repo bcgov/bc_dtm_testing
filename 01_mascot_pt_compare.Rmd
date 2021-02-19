@@ -178,10 +178,6 @@ delta_pt
 
 ```
 
-
-# spatial comparion with uncertainty
-
-
 ```{r}
 
 geo_long <- geo_long %>%
@@ -196,7 +192,7 @@ geo_long <- geo_long %>%
     value >=100 & value <800 ~ "extreme lower (100 to 800")) %>%
   filter(!is.na(value))
     
-table(geo_long$group)
+#table(geo_long$group)
 
 geo_plot <- ggplot(geo_long, aes(group)) + 
   geom_bar()+ 
@@ -207,3 +203,12 @@ geo_plot
 
 ```
 
+# spatial uncertainty 
+
+```{r}
+geo_longsf <- st_sf(geo_long)
+
+geo_longsf %>%
+  ggplot() + 
+  geom_sf(aes(colour = dem_type)) + 
+  facet_wrap(~ group)
