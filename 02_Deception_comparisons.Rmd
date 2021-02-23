@@ -101,7 +101,7 @@ st_write(geopt, file.path(temp.dir, "deception_dem_pt.gpkg"))
 
 The isat point data crossed within the deception boundary for 3 passes. Split into transects 1, 2, 3. Transect 2 and 3 represented evenly spaced points, while isat transect 1 had gaps.  
 
-![isat points withinDeception](./images/deception_isat.jpeg){width=50%}
+![Fig 1: isat points within Deception AOI](./images/deception_isat.jpeg){width=50%}
 
 ```{r, echo = FALSE}
 
@@ -118,7 +118,9 @@ The isat point data crossed within the deception boundary for 3 passes. Split in
 
 ```
 
-compare between the data sources (trim, eDTM, isat, lidar (2.5 - 25m))
+#### Compare between the data sources (trim, eDTM, isat, lidar (2.5 - 25m))
+
+Firstly compare the eDTM, trim and isat points for the two consistent transects (2 - easterly edge) and 3 (middle transect).
 
 ```{r , echo = FALSE}
 geopt <- geopt %>% filter(trans %in% c("2","3"))
@@ -145,6 +147,13 @@ ggplot(geolong23, aes(x = rn, y = value)) +
 
 ```
 
+- Trim is consitently higher elevation than eDTM or isat points. 
+- complex relief (ie transect 3 - 275m to 300m has more variation in patterns)
+
+### Compare lidar to eDTM and TRIM datasets. 
+
+Compare the 25m lidar upscaled values to eDTM and TRIM. Tested variation in lidar reolution (2.5, 5, 10,25 and showed little difference in values )
+
 ```{r, echo = FALSE}
 
 geolong3 <- geolong %>%
@@ -164,6 +173,63 @@ ggplot(geolong23, aes(x = rn, y = value)) +
 
 ```
 
-# Cutblocks and wetlands 
+
+# Deception AOI extent.  
+
+```{r}
+
+# read in the datasets
+l25 <- raster(file.path(liDAR.dir, "25m", "dem.tif"))
+
+#2 - TRIM: 
+trim <- raster(file.path(data.dir, "trim", "TRIM","bc_elevation_25m_bcalb.tif"))
+
+# mosic the tiles for Deception together
+ t1 <- raster(file.path(data.dir, "BC30m", "tt30_tiles","T1265", "T1265", "dtm_M_T1265.tif"))
+ t2 <- raster(file.path(data.dir, "BC30m", "tt30_tiles","T1264", "T1264", "dtm_M_T1264.tif"))
+ t3 <- raster(file.path(data.dir, "BC30m", "tt30_tiles","T1318", "T1318", "dtm_M_T1318.tif"))
+ t4 <- raster(file.path(data.dir, "BC30m", "tt30_tiles","T1319", "T1319", "dtm_M_T1319.tif"))
+ 
+edtm30 <- mosaic(t1, t2, t3, t4, fun = mean)
+
+
+# reprojecy edtm to match lidar
+edtm30rp <- projectRaster(edtm30, crs = crs(l25), res = res(l25))
+
+extent(l25)
+extent(edtm30rp)
+
+dems <- raster::stack(l25,edtm30rp)
+
+
+
+sf::gdal_utils(
+  util = "warp", 
+  source = edtm30, 
+  destination = "out3005.tif", 
+  options = c("-t_srs", "EPSG:3005",
+              "-r", "bilinear",
+              "-of", "VRT"))
+
+
+
+```
+
+
+
+ws <- bcdc_query_geodata("51f20b1a-ab75-42de-809d-bf415a0f9c62") %>%
+  filter( WATERSHED_GROUP_CODE == "PARS") %>%
+  collect() %>% st_as_sf()
+  
+
+dem.ws <- cded_raster(aoi = ws, dest_vrt = "temp.vrt")
+
+
+
+raster::raster("out3005.vrt") %>% st_crs() == st_crs(ws)
+#> [1] TRUE
+Created on 2021-02-18 by the reprex package (v0.3.0)
+
+
 
 
