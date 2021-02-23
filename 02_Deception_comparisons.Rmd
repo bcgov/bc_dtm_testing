@@ -1,0 +1,169 @@
+---
+title: "Deception Study are DEMs"
+author: "G. Perkins"
+date: "22/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = FALSE,
+                      message = FALSE)
+
+```
+
+Within the Deception study site, we can compare the TRIM, eDTM, isat points along with lidar data. 
+ 
+
+```{r load data, echo = FALSE }
+# Read in geometic data set (independent of data assembly process) and compare to 
+# ensemble dtm, lidar, trim. 
+
+library(raster)
+library(sf)
+library(bcdata)
+library(bcmaps)
+library(dplyr)
+library(rvest)
+library(ggplot2)
+library(tidyr)
+
+
+## Load in eDTM layer and trim (from sync location)
+
+data.dir <- "D:/Hengle_BCDEM30"
+sync.dir <- "C:/Sync/BC_DEM"
+temp.dir <- file.path(data.dir,"temp")
+liDAR.dir <- 
+"D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\1_map_inputs\\covariates"
+
+if(file.exists(file.path(temp.dir, "deception_dem_pt.gpkg"))){
+  
+  #print("loading file")
+  geopt <- st_read(file.path(temp.dir, "deception_dem_pt.gpkg"), quiet = TRUE)
+
+} else {
+
+# load in provinical DEMs
+# 1) edtm: 
+edtm <- raster(file.path(data.dir, "BC30m","dtm_elev.lowestmode_gedi.eml_m_30m_0..0cm_2000..2018_bc.epsg3005_v0.1.tif"))
+
+#2 - TRIM: 
+trim <- raster(file.path(data.dir, "trim", "TRIM","bc_elevation_25m_bcalb.tif"))
+
+#3 - LiDAR 
+l2_5 <- raster(file.path(liDAR.dir, "2.5m", "dem.tif"))
+l5 <- raster(file.path(liDAR.dir, "5m", "dem.tif"))
+l10 <- raster(file.path(liDAR.dir, "10m", "dem.tif"))
+l25 <- raster(file.path(liDAR.dir, "25m", "dem.tif"))
+
+# load in the isat2 points 
+isat <- st_read(file.path(temp.dir, "isat2_deception.gpkg"), quiet = TRUE)
+
+isat1 <- isat[1:112,] # south to north - westly transect 
+isat2 <- isat[113:211,] # south to north - easterly transect
+isat3 <- isat[212:349,] # north to south - middle transect
+
+geopt <- isat %>%
+  mutate(edtm = raster::extract(edtm, isat)) %>%
+  mutate(trim = raster::extract(trim, isat)) %>%
+  mutate(l2_5 = raster::extract(l2_5, isat)) %>%
+  mutate(l5 = raster::extract(l5, isat)) %>%
+  mutate(l10 = raster::extract(l10, isat)) %>%
+  mutate(l25 = raster::extract(l25, isat)) 
+  
+geopt <- geopt %>%
+  mutate(rn = row_number()) %>%
+  mutate(trans = case_when(
+    rn < 113 ~ "1", 
+    rn >= 113 & rn <212 ~ "2",
+    rn > 211 ~ "3"
+  )) 
+
+
+st_write(geopt, file.path(temp.dir, "deception_dem_pt.gpkg"))
+
+} 
+
+## add tiled data - found no difference between pts
+
+# edtm_tile <- raster(file.path(data.dir, "BC30m", "tt30_tiles","T1265", "T1265", "dtm_M_T1265.tif"))
+# 
+# geopt <- geopt %>%
+#   mutate(edtm_tile = raster::extract(edtm_tile, geopt)) 
+# 
+# unique(geopt$edtm_tile -geopt$edtm ) 
+
+
+```
+
+## Cross Section comparisons
+
+The isat point data crossed within the deception boundary for 3 passes. Split into transects 1, 2, 3. Transect 2 and 3 represented evenly spaced points, while isat transect 1 had gaps.  
+
+![isat points withinDeception](./images/deception_isat.jpeg){width=50%}
+
+```{r, echo = FALSE}
+
+# # transect 2
+# ggplot(geopt) + 
+#   geom_point(aes(x = rn, y = edtm, colour = "red")) + 
+#   geom_point(aes(x = rn, y = h_te_mean, colour = "green")) + 
+#   geom_point(aes(x = rn, y = trim, colour = "blue")) + 
+#   geom_line(aes(x = rn, y = edtm, colour = "red")) + 
+#   geom_line(aes(x = rn, y = trim, colour = "blue")) + 
+#   facet_wrap(~trans, scales = "free_x") 
+# 
+
+
+```
+
+compare between the data sources (trim, eDTM, isat, lidar (2.5 - 25m))
+
+```{r , echo = FALSE}
+geopt <- geopt %>% filter(trans %in% c("2","3"))
+
+geolong <- geopt %>%
+  pivot_longer(cols = c(edtm, trim,l2_5 ,l5,l10,l25,h_te_mean), names_to = "dem_type", values_to = "value") %>%
+  mutate(dem_type = ifelse(dem_type == "h_te_mean", "isat", dem_type))
+
+geolong2 <- geolong %>%
+  filter(dem_type %in% c("edtm", "trim", "isat"))
+
+geolong22 <- geolong2 %>% filter(trans =="2")
+geolong23 <- geolong2 %>% filter(trans =="3")
+
+ggplot(geolong22, aes(x = rn, y = value)) + 
+         geom_point(aes(colour = dem_type)) + 
+  geom_line(aes(colour = dem_type)) + 
+ facet_grid(~trans, scales = "free_x" )
+
+ggplot(geolong23, aes(x = rn, y = value)) + 
+         geom_point(aes(colour = dem_type)) + 
+  geom_line(aes(colour = dem_type)) + 
+ facet_grid(~trans, scales = "free_x" )
+
+```
+
+```{r, echo = FALSE}
+
+geolong3 <- geolong %>%
+  filter(dem_type %in% c("edtm", "trim", "l25"))
+
+geolong22 <- geolong3 %>% filter(trans =="2")
+geolong23 <- geolong3 %>% filter(trans =="3")
+
+ggplot(geolong22, aes(x = rn, y = value)) + 
+         geom_point(aes(colour = dem_type)) + 
+  geom_line(aes(colour = dem_type))
+
+ggplot(geolong23, aes(x = rn, y = value)) + 
+         geom_point(aes(colour = dem_type)) + 
+  geom_line(aes(colour = dem_type)) 
+
+
+```
+
+# Cutblocks and wetlands 
+
+
