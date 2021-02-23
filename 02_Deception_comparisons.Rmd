@@ -38,7 +38,7 @@ liDAR.dir <-
 "D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\1_map_inputs\\covariates"
 
 aoi <- st_read(file.path(
-"D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\0_raw_inputs\\base_layers\\aoi.gpkg"))
+"D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\0_raw_inputs\\base_layers\\aoi.gpkg"), quiet = TRUE)
 
 
 #BC Albers proj4 string
