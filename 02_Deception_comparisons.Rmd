@@ -37,8 +37,15 @@ temp.dir <- file.path(data.dir,"temp")
 liDAR.dir <- 
 "D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\1_map_inputs\\covariates"
 
+aoi <- st_read(file.path(
+"D:\\PEM_DATA\\BEC_DevExchange_Work\\Deception_AOI\\0_raw_inputs\\base_layers\\aoi.gpkg"))
+
+
+#BC Albers proj4 string
+bcalb = '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +datum=NAD83'
+
+
 if(file.exists(file.path(temp.dir, "deception_dem_pt.gpkg"))){
-  
   #print("loading file")
   geopt <- st_read(file.path(temp.dir, "deception_dem_pt.gpkg"), quiet = TRUE)
 
@@ -115,7 +122,6 @@ The isat point data crossed within the deception boundary for 3 passes. Split in
 #   facet_wrap(~trans, scales = "free_x") 
 # 
 
-
 ```
 
 #### Compare between the data sources (trim, eDTM, isat, lidar (2.5 - 25m))
@@ -147,7 +153,7 @@ ggplot(geolong23, aes(x = rn, y = value)) +
 
 ```
 
-- Trim is consitently higher elevation than eDTM or isat points. 
+- Trim is consistently higher elevation than eDTM or isat points. 
 - complex relief (ie transect 3 - 275m to 300m has more variation in patterns)
 
 ### Compare lidar to eDTM and TRIM datasets. 
@@ -155,7 +161,6 @@ ggplot(geolong23, aes(x = rn, y = value)) +
 Compare the 25m lidar upscaled values to eDTM and TRIM. Tested variation in lidar reolution (2.5, 5, 10,25 and showed little difference in values )
 
 ```{r, echo = FALSE}
-
 geolong3 <- geolong %>%
   filter(dem_type %in% c("edtm", "trim", "l25"))
 
@@ -170,13 +175,15 @@ ggplot(geolong23, aes(x = rn, y = value)) +
          geom_point(aes(colour = dem_type)) + 
   geom_line(aes(colour = dem_type)) 
 
-
 ```
 
 
 # Deception AOI extent.  
 
-```{r}
+```{r, eval = FALSE, echo = FALSE}
+
+#BC Albers proj4 string
+bcalb = '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +datum=NAD83'
 
 # read in the datasets
 l25 <- raster(file.path(liDAR.dir, "25m", "dem.tif"))
@@ -193,43 +200,91 @@ trim <- raster(file.path(data.dir, "trim", "TRIM","bc_elevation_25m_bcalb.tif"))
 edtm30 <- mosaic(t1, t2, t3, t4, fun = mean)
 
 
-# reprojecy edtm to match lidar
-edtm30rp <- projectRaster(edtm30, crs = crs(l25), res = res(l25))
+##crop the trim to AOI (lidar extent)
+l25_dec <- crop(l25, aoi)
+trim_dec <- crop(trim, aoi)
+edtm30_dec <- crop(edtm30, aoi)
 
-extent(l25)
-extent(edtm30rp)
+extent(edtm30_dec)
+extent(l25_dec)
+extent(trim_dec)
 
-dems <- raster::stack(l25,edtm30rp)
+edtm30_dec_rs <- resample(edtm30_dec, l25_dec, "bilinear")
+trim_dec_rs <- resample(trim_dec, l25_dec, "bilinear" )
+
+edtm30_dec_rs <- crop(edtm30_dec_rs, l25_dec)
+trim_dec_rs <- crop(trim_dec_rs, l25_dec)
 
 
+dems <- stack(edtm30_dec_rs, trim_dec_rs, l25_dec)
 
-sf::gdal_utils(
-  util = "warp", 
-  source = edtm30, 
-  destination = "out3005.tif", 
-  options = c("-t_srs", "EPSG:3005",
-              "-r", "bilinear",
-              "-of", "VRT"))
 
+# writeRaster(dems, temp.dir, "dems.tif")
+# 
+# writeRaster(l25_dec , file.path(temp.dir,'lidar_dec_stack.tif'), overwrite = TRUE)
+# writeRaster(edtm30_dec_rs , file.path(temp.dir,'edtm_dec_stack.tif'), overwrite = TRUE)
+# writeRaster( trim_dec_rs, file.path(temp.dir,'trim_dec_stack.tif'), overwrite = TRUE)
+
+
+delta_lidar <- dems$dem - dems$layer
+delta_trim <- dems$dem - dems$bc_elevation_25m_bcalb
+
+writeRaster(delta_lidar , file.path(temp.dir,'lidar_edtm_diff.tif'), overwrite = TRUE)
+writeRaster(delta_trim , file.path(temp.dir,'lidar_trim_diff.tif'), overwrite = TRUE)
+
+# 
+# sf::gdal_utils(
+#   util = "warp", 
+#   source = file.path(temp.dir,'edtm_dec.tif'), 
+#   destination = file.path(temp.dir,"edtm_dec_3005.tif"), 
+#   options = c("-t_srs", "EPSG:3005",
+#               "-r", "cubic"))
 
 
 ```
 
+I calculated the difference from lidar to the eDTM and TRIM data sets with Deception study area. Note for this to occur some reprojection was necesary to line up lidar, eDTM and TRIM datasets.  
+
+The eDTM delta values ranged from (-9 to 47.4 ) indicating the underprediction of eDTM in general. The delta or lidar - trim = (-24 to 34) indicating more spread in uncertainty by underestimate and over estimate of values. 
+
+![Fig 2: Lidar subtract eDTM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve) ](./images/dec_lidar_edtm_delta.jpg){width=45%}
+![Fig 3: Lidar subtract TRIM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve) ](./images/dec_lidar_trim_delta.jpg){width=45%}
+
+ 
+ 
+### Cutblocks
+ 
+ Zooming in on an areas of interest to assess the impact of cutblocks 
+ 
+![Fig 4: Bing imagery of cutblocks](./images/dec_lidar_edtm_cutblock_bind.jpg){width=50%}
+
+![Fig 5: Lidar subtract eDTM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve)](./images/dec_lidar_edtm_cutblock.jpg){width=50%}
+
+![Fig 6: Lidar subtract TRIM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve)](./images/dec_lidar_trim_cutblock.jpg){width=50%}
 
 
-ws <- bcdc_query_geodata("51f20b1a-ab75-42de-809d-bf415a0f9c62") %>%
-  filter( WATERSHED_GROUP_CODE == "PARS") %>%
-  collect() %>% st_as_sf()
-  
-
-dem.ws <- cded_raster(aoi = ws, dest_vrt = "temp.vrt")
+## Areas of steep terrain. 
 
 
+![Fig 7:Steep Hillshade](./images/dem_hillshade.jpg){width=50%}
 
-raster::raster("out3005.vrt") %>% st_crs() == st_crs(ws)
-#> [1] TRUE
-Created on 2021-02-18 by the reprex package (v0.3.0)
-
+![Fig 8: delta eDTM over Hillshade](./images/dem_hillshade_edtm.jpg){width=50%}
 
 
+![Fig 9: delta trim over Hillshade](./images/dem_hillshade_trim.jpg){width=50%}
 
+Interestingly in some areas where TRIM showed larger error (ie. - 25m) the eDTM was more accuracy. 
+
+![Fig 10: delta trim over Hillshade](./images/dec_trim_error.jpg){width=50%}
+
+![Fig 11: delta trim over Hillshade](./images/dec_trim_error_edtm.jpg){width=50%}
+
+
+
+### Overall thoughts 
+
+- TRIM estimates showed larger proportion of data with -5m to +5m than eDTM. 
+- eDTM showed bias to under estimate of elevation.
+- eDTM sensitive to cutblocks 
+- both TRIM and EDTM showed higher error in areas with high hillshade. 
+- eDTM outperformed TRIM in some areas. 
