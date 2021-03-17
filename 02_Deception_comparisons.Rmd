@@ -248,6 +248,8 @@ I calculated the difference from lidar to the eDTM and TRIM data sets with Decep
 The eDTM delta values ranged from (-9 to 47.4 ) indicating the underprediction of eDTM in general. The delta or lidar - trim = (-24 to 34) indicating more spread in uncertainty by underestimate and over estimate of values. 
 
 ![Fig 2: Lidar subtract eDTM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve) ](./images/dec_lidar_edtm_delta.jpg){width=45%}
+
+
 ![Fig 3: Lidar subtract TRIM for Deception AOI. Range of colours from red (-ve to green/blue (+ve). transparent is where delta is within 5m (-ve or +ve) ](./images/dec_lidar_trim_delta.jpg){width=45%}
 
  
